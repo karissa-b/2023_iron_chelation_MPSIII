@@ -10,35 +10,28 @@ library(readxl)
 
 # # IMPORT DATA -------------------------------------------------------------
 
-# add the fish_ids to the metadata list
+# import metadata
 meta <-
-  read_excel("data/Full exp 2/2023_Sept_20_ip_DFP_fullexp2_meta.xlsx") %>%
-  arrange(start.time) %>%
-  mutate(fish_id = as.character(fish_id),
-         genotype = factor(genotype, levels = c("het", "hom")),
-         HomeTank = as.factor(HomeTank),
-         sex = as.factor(sex),
-         day.inj = as.factor(day.inj),
-         treatment = str_replace(treatment,
-                                 pattern = "O", replacement = "P"), # typo in meta sheet
-         treatment = factor(treatment,
-                            levels = c("0.85% saline",
-                                       "7 µg deferiprone")),
-         start.time = forcats::fct_inorder(start.time),
-         Trial = as.factor(Trial)
+  readRDS("data/Full exp 2/R_objects/metadata_withGenotype_dayinj1.rds") %>%
+  bind_rows(
+    readRDS("data/Full exp 2/R_objects/metadata_withGenotype_dayinj2.rds")
+  ) %>%
+  arrange(Trial) %>%
+  mutate(start.time = fct_inorder(start.time))
 
-  )
-
-
+# defeine the files for analysis
 file_list <- list.files(path = here("data/Full exp 2/raw_data/zone_data"),
                         pattern = "*.csv",
                         full.names = TRUE,
                         recursive = TRUE)
 
 
-df <- tibble(file_list = file_list) %>% #Import data as a tibble with nested lists
-  mutate(tail = map(file_list, ~ read_csv(.x, col_names = F, skip = 4)), #tail = data
-         head = map(file_list, ~ read_csv(.x, col_names = F, n_max = 4))) # head = demographic info
+df <-
+  tibble(file_list = file_list) %>% #Import data as a tibble with nested lists
+  mutate(
+    tail = map(file_list, ~ read_csv(.x, col_names = F, skip = 4)), # tail = data
+    head = map(file_list, ~ read_csv(.x, col_names = F, n_max = 4)) # head = demographic info
+    )
 
 
 # when the data was collected, i just set the subject ID as 1-10,
@@ -50,7 +43,10 @@ df <- tibble(file_list = file_list) %>% #Import data as a tibble with nested lis
 subject2fish <- meta %>%
   dplyr::select(fish_id, `Subject Identification` = Trial) %>%
   group_by(`Subject Identification`) %>%
-  summarise(fish = str_c(fish_id, collapse=" "))
+  summarise(fish = str_c(fish_id, collapse=" ")) %>%
+  na.omit # omit that last fish which did not behav testing
+
+
 
 # replace the behav batch id with the fish_id string
 df$head <- df$head %>%
@@ -93,6 +89,7 @@ df <- #convert df from a tibble w/ nested lists to a basic tibble
   unnest(head) %>%
   unnest(tail)
 
+
 # DATA WANGLING -----------------------------------------------------------
 ## STEP 1 - select variables that we are intrested in
 df <-
@@ -132,7 +129,7 @@ df <-
 
 ## STEP 4 - export for backup/later use
 
-write.csv(df, "data/Full exp 1/processed_data/tidy_data.csv")
+write.csv(df, "data/Full exp 2/processed_data/tidy_data.csv")
 
 # ANALYSIS ----------------------------------------------------------------
 df_a <- df #create a new tibble to analyse
@@ -174,7 +171,7 @@ df_a <- df_a %>% mutate(time_in_zone = time_exit - time_enter) #calculate time s
 
 ## STEP 3 - Export for backup/later use
 
-write.csv(df_a, "data/Full exp 1/processed_data/time_in_zone.csv")
+write.csv(df_a, "data/Full exp 2/processed_data/time_in_zone.csv")
 
 ##STEP 4 - Which way did the fish turn?
 df_list <- df_a %>% filter(zone != 4) #remove centre zone (i.e. zone 4)
@@ -197,6 +194,7 @@ df_b <- df_b %>%
   arrange(file_id, fish_id, bin) %>% #restore previous order(i.e. by fish_id)
   na.omit() #remove NA rows
 
+# tetras ------------------------------------------------------------------
 ## STEP 5 - Tetragrams
 df_c <- df_b %>%
   group_by(fish_id, bin) %>% #create groups for tetragrams
@@ -246,6 +244,11 @@ final_data <- tet_wide %>%
          rel_R = (R*100)/total_turns,
          rel_L = (L*100)/total_turns)
 
+final_data %>%
+  .$fish_id %>%
+  unique %>%
+  length
+
 ## STEP 7 - Final Output
-write.csv(final_data, "data/Full exp 1/processed_data/final_output.csv")
+write.csv(final_data, "data/Full exp 2/processed_data/final_output.csv")
 
